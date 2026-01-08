@@ -347,3 +347,38 @@
     false
   )
 )
+
+;; Batch operations
+;; #[allow(unchecked_data)]
+(define-public (batch-authorize-issuers (issuer-list (list 10 principal)))
+  (begin
+    (asserts! (is-eq tx-sender contract-owner) err-unauthorized)
+    (ok (map authorize-issuer-internal issuer-list))
+  )
+)
+
+(define-private (authorize-issuer-internal (issuer principal))
+  (begin
+    (map-set authorized-issuers issuer true)
+    true
+  )
+)
+
+;; #[allow(unchecked_data)]
+(define-public (batch-revoke-credentials (credential-ids (list 10 uint)))
+  (ok (map revoke-credential-internal credential-ids))
+)
+
+(define-private (revoke-credential-internal (credential-id uint))
+  (match (map-get? credentials credential-id)
+    credential 
+      (if (is-eq tx-sender (get issuing-body credential))
+        (begin
+          (map-set credentials credential-id (merge credential { valid: false }))
+          true
+        )
+        false
+      )
+    false
+  )
+)
