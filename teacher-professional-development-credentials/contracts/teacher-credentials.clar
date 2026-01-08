@@ -206,3 +206,144 @@
     (ok true)
   )
 )
+
+;; Data Maps for Enhanced Functionality
+(define-map credential-endorsements
+  { credential-id: uint, endorser: principal }
+  { 
+    endorsement-date: uint,
+    endorsement-note: (string-ascii 200)
+  }
+)
+
+(define-map credential-endorsement-count uint uint)
+
+(define-map teacher-specializations
+  { teacher: principal, specialization: (string-ascii 100) }
+  { 
+    verified: bool,
+    verification-date: uint
+  }
+)
+
+(define-map credential-metadata
+  uint
+  {
+    hours-completed: uint,
+    institution: (string-ascii 100),
+    course-name: (string-ascii 200)
+  }
+)
+
+;; #[allow(unchecked_data)]
+(define-public (endorse-credential
+  (credential-id uint)
+  (endorsement-note (string-ascii 200)))
+  (let
+    (
+      (credential (unwrap! (map-get? credentials credential-id) err-not-found))
+      (endorsement-key { credential-id: credential-id, endorser: tx-sender })
+    )
+    (asserts! (get valid credential) err-unauthorized)
+    (map-set credential-endorsements endorsement-key
+      {
+        endorsement-date: burn-block-height,
+        endorsement-note: endorsement-note
+      }
+    )
+    (map-set credential-endorsement-count credential-id
+      (+ (default-to u0 (map-get? credential-endorsement-count credential-id)) u1)
+    )
+    (ok true)
+  )
+)
+
+;; #[allow(unchecked_data)]
+(define-public (add-credential-metadata
+  (credential-id uint)
+  (hours-completed uint)
+  (institution (string-ascii 100))
+  (course-name (string-ascii 200)))
+  (let
+    (
+      (credential (unwrap! (map-get? credentials credential-id) err-not-found))
+    )
+    (asserts! (is-eq tx-sender (get issuing-body credential)) err-unauthorized)
+    (map-set credential-metadata credential-id
+      {
+        hours-completed: hours-completed,
+        institution: institution,
+        course-name: course-name
+      }
+    )
+    (ok true)
+  )
+)
+
+;; #[allow(unchecked_data)]
+(define-public (verify-teacher-specialization
+  (teacher principal)
+  (specialization (string-ascii 100)))
+  (begin
+    (asserts! (is-authorized-issuer tx-sender) err-unauthorized)
+    (map-set teacher-specializations
+      { teacher: teacher, specialization: specialization }
+      {
+        verified: true,
+        verification-date: burn-block-height
+      }
+    )
+    (ok true)
+  )
+)
+
+;; #[allow(unchecked_data)]
+(define-public (revoke-specialization
+  (teacher principal)
+  (specialization (string-ascii 100)))
+  (let
+    (
+      (spec-data (unwrap! (map-get? teacher-specializations 
+        { teacher: teacher, specialization: specialization }) err-not-found))
+    )
+    (asserts! (is-authorized-issuer tx-sender) err-unauthorized)
+    (map-set teacher-specializations
+      { teacher: teacher, specialization: specialization }
+      (merge spec-data { verified: false })
+    )
+    (ok true)
+  )
+)
+
+;; Read-only functions for new features
+(define-read-only (get-credential-endorsement-count (credential-id uint))
+  (default-to u0 (map-get? credential-endorsement-count credential-id))
+)
+
+(define-read-only (get-credential-endorsement 
+  (credential-id uint) 
+  (endorser principal))
+  (map-get? credential-endorsements 
+    { credential-id: credential-id, endorser: endorser })
+)
+
+(define-read-only (get-credential-metadata (credential-id uint))
+  (map-get? credential-metadata credential-id)
+)
+
+(define-read-only (get-teacher-specialization
+  (teacher principal)
+  (specialization (string-ascii 100)))
+  (map-get? teacher-specializations 
+    { teacher: teacher, specialization: specialization })
+)
+
+(define-read-only (is-specialization-verified
+  (teacher principal)
+  (specialization (string-ascii 100)))
+  (match (map-get? teacher-specializations 
+    { teacher: teacher, specialization: specialization })
+    spec-data (get verified spec-data)
+    false
+  )
+)
